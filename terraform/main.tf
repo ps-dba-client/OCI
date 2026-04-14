@@ -257,6 +257,8 @@ resource "oci_functions_application" "metrics_app" {
     OTEL_EXPORTER_OTLP_PROTOCOL         = "http/protobuf"
     OTEL_EXPORTER_OTLP_TRACES_PROTOCOL  = "http/protobuf"
     OTEL_EXPORTER_OTLP_METRICS_PROTOCOL = "http/protobuf"
+    # Short-lived invokes: sample every trace so APM sees spans (default parent sampler can drop).
+    OTEL_TRACES_SAMPLER = "always_on"
     # Realm-based config only sets trace + metric OTLP URLs; avoid failing log exporter (logs use HEC)
     OTEL_LOGS_EXPORTER = "none"
   }

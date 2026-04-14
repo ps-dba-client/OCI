@@ -170,6 +170,11 @@ def _send_signalfx_gauges(
         raise RuntimeError(f"SignalFx ingest HTTP {r.status_code}")
 
 
+def _dims_preview(dims: Dict[str, str], max_len: int = 400) -> str:
+    s = json.dumps(dims, sort_keys=True)
+    return s if len(s) <= max_len else s[: max_len - 3] + "..."
+
+
 def collect_and_forward(log: logging.Logger) -> int:
     compartment = os.environ.get("METRICS_COMPARTMENT_OCID", "").strip()
     if not compartment:
@@ -193,28 +198,39 @@ def collect_and_forward(log: logging.Logger) -> int:
     start_s = start.strftime("%Y-%m-%dT%H:%M:%S.000Z")
     end_s = end.strftime("%Y-%m-%dT%H:%M:%S.000Z")
 
+    in_subtree = os.environ.get("LIST_METRICS_IN_SUBTREE", "false").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+    )
+
     log.info(
-        "Starting OCI metrics collection compartment=%s region=%s window=%s max_metrics=%s",
+        "Starting OCI metrics collection compartment=%s region=%s window=%s max_metric_definitions=%s list_metrics_subtree=%s",
         compartment,
         region,
         window,
         max_metrics,
+        in_subtree,
     )
     send_hec_event(
         log,
         "metrics collection started",
-        extra_fields={"compartment_id": compartment, "region": region},
+        extra_fields={
+            "compartment_id": compartment,
+            "region": region,
+            "list_metrics_in_subtree": str(in_subtree),
+        },
     )
 
     details = ListMetricsDetails()
     metrics_seen = 0
     gauges: List[Dict[str, Any]] = []
     opc_next_page: Optional[str] = None
-    in_subtree = os.environ.get("LIST_METRICS_IN_SUBTREE", "false").strip().lower() in (
-        "1",
-        "true",
-        "yes",
-    )
+    list_page_index = 0
+    datapoint_count = 0
+    definitions_with_points = 0
+    definitions_no_points = 0
+    summarize_failures = 0
 
     while metrics_seen < max_metrics:
         kwargs: Dict[str, Any] = {
@@ -240,8 +256,21 @@ def collect_and_forward(log: logging.Logger) -> int:
 
         items = lm.data or []
         if not items:
-            log.info("list_metrics returned no items on this page")
+            if list_page_index == 0:
+                log.warning(
+                    "EMPTY_METRIC_LIST: list_metrics returned no metric definitions for compartment=%s region=%s subtree=%s. "
+                    "OCI Monitoring has nothing to list yet (new compartment, delay after first compute, or wrong compartment). "
+                    "Provision a Linux VM with Compute Instance Monitoring or wait several minutes after boot.",
+                    compartment,
+                    region,
+                    in_subtree,
+                )
+            else:
+                log.info("list_metrics page=%s empty (end of pagination)", list_page_index)
             break
+
+        log.info("list_metrics page=%s definitions_on_page=%s", list_page_index, len(items))
+        list_page_index += 1
 
         for item in items:
             if metrics_seen >= max_metrics:
@@ -251,7 +280,15 @@ def collect_and_forward(log: logging.Logger) -> int:
             ns = item.namespace
             dims = dict(item.dimensions or {})
 
+            log.info(
+                "collecting definition %s/%s dimensions=%s",
+                ns,
+                name,
+                _dims_preview(dims),
+            )
+
             query = _build_query(name, dims, window)
+            points_before = datapoint_count
             try:
                 sm = client.summarize_metrics_data(
                     compartment_id=compartment,
@@ -263,6 +300,7 @@ def collect_and_forward(log: logging.Logger) -> int:
                     ),
                 )
             except oci.exceptions.ServiceError as e:
+                summarize_failures += 1
                 log.warning(
                     "summarize failed for metric=%s ns=%s code=%s msg=%s",
                     name,
@@ -272,6 +310,7 @@ def collect_and_forward(log: logging.Logger) -> int:
                 )
                 continue
             except Exception:
+                summarize_failures += 1
                 log.exception("summarize unexpected error metric=%s ns=%s", name, ns)
                 continue
 
@@ -303,8 +342,26 @@ def collect_and_forward(log: logging.Logger) -> int:
                             "timestamp": ts_ms,
                         }
                     )
+                    datapoint_count += 1
+                    log.debug(
+                        "datapoint ns=%s metric=%s value=%s ts_ms=%s signalfx_key=%s",
+                        ns,
+                        name,
+                        val,
+                        ts_ms,
+                        metric_key,
+                    )
 
-            # batch to limit request size
+            if datapoint_count > points_before:
+                definitions_with_points += 1
+            else:
+                definitions_no_points += 1
+                log.info(
+                    "no datapoints in window for ns=%s name=%s (summarize ok but empty series; try wider window or later retry)",
+                    ns,
+                    name,
+                )
+
             if len(gauges) >= 100:
                 _send_signalfx_gauges(log, realm, token, gauges)
                 gauges.clear()
@@ -316,17 +373,52 @@ def collect_and_forward(log: logging.Logger) -> int:
     if gauges:
         _send_signalfx_gauges(log, realm, token, gauges)
 
-    log.info("Finished metrics collection processed_definitions=%s", metrics_seen)
+    log.info(
+        "Finished metrics collection metric_definitions_scanned=%s datapoints_to_signalfx=%s "
+        "definitions_with_points=%s definitions_no_points_in_window=%s summarize_failures=%s list_pages=%s",
+        metrics_seen,
+        datapoint_count,
+        definitions_with_points,
+        definitions_no_points,
+        summarize_failures,
+        list_page_index,
+    )
     send_hec_event(
         log,
         "metrics collection finished",
-        extra_fields={"processed_metric_definitions": metrics_seen},
+        extra_fields={
+            "processed_metric_definitions": metrics_seen,
+            "datapoints_forwarded": datapoint_count,
+            "definitions_with_points": definitions_with_points,
+            "definitions_no_points_in_window": definitions_no_points,
+        },
     )
     return metrics_seen
 
 
+def _log_otel_trace_hints(log: logging.Logger) -> None:
+    """Non-secret OTEL / Splunk export hints for trace troubleshooting (APM)."""
+    for key in (
+        "OTEL_SERVICE_NAME",
+        "OTEL_TRACES_EXPORTER",
+        "OTEL_TRACES_SAMPLER",
+        "OTEL_EXPORTER_OTLP_PROTOCOL",
+        "OTEL_EXPORTER_OTLP_TRACES_PROTOCOL",
+        "OTEL_EXPORTER_OTLP_ENDPOINT",
+        "SPLUNK_REALM",
+    ):
+        v = os.environ.get(key, "").strip()
+        if v:
+            log.info("otel_config %s=%s", key, v)
+    if not os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT", "").strip():
+        log.info(
+            "otel_config OTEL_EXPORTER_OTLP_ENDPOINT not set (Splunk distro usually sets OTLP from SPLUNK_REALM + access token)"
+        )
+
+
 def handler(ctx, data=None):
     log = setup_logging()
+    _log_otel_trace_hints(log)
     log.info(
         "handler invoked realm=%s hec_configured=%s access_token_configured=%s compartment_configured=%s",
         os.environ.get("SPLUNK_REALM", ""),

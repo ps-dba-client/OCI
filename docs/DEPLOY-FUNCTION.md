@@ -31,7 +31,7 @@ Use the regional OCIR hostname (**e.g.** `iad.ocir.io` for Ashburn), build **lin
 
 ```bash
 cd functions/oci-metrics-splunk-bridge
-IMAGE="iad.ocir.io/${NS}/splunk-oci-sample/metrics-bridge:0.1.0"
+IMAGE="iad.ocir.io/${NS}/splunk-oci-sample/metrics-bridge:0.1.7"
 
 docker buildx build --platform linux/amd64 --provenance=false --sbom=false -t "$IMAGE" --push .
 ```
@@ -158,6 +158,9 @@ Work through these in order:
 | `403` on HEC | HEC token, index allow-list |
 | Function timeout | Lower `MAX_METRICS_PER_INVOKE` or increase `timeout_in_seconds` (cost/limits) |
 | No trace_id on logs | Image must use `opentelemetry-instrument` + `OTEL_PYTHON_DISTRO=splunk_distro`; see Dockerfile and Terraform app `config` |
+| **Out of host capacity** (Linux VM) | Rotate **`availability_domain_index`** (0–2), switch **`vm_shape`** (`VM.Standard.E2.1.Micro` vs `VM.Standard.A1.Flex`), change **`region`**, or retry later. |
+| **404 / NotAuthorized** on `E2.1.Micro` | Tenancy may not allow that shape; use **A1.Flex** or a supported Always Free shape in your home region docs. |
+| Verbose per-datapoint logs | Set **`LOG_LEVEL=DEBUG`** on the Functions app config (Terraform `config` map) for datapoint-level lines. |
 
 ## 7. Optional: TLS verify for HEC
 

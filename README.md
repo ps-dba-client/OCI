@@ -61,9 +61,10 @@ To confirm the function is executing: open the **function** → **Logs** (if log
 If the compartment has **no other workloads**, there may be little for OCI Monitoring to report. This stack can add an **Ubuntu 22.04** instance whose **Oracle Cloud Agent** publishes **`oci_computeagent`** metrics (CPU, memory, disk, etc.) for the function to list and forward.
 
 1. In `terraform.tfvars`, set **`create_linux_vm = true`**, **`ssh_public_key`**, and a tight **`allowed_ssh_cidr`** (e.g. your `/32` public IP).
-2. Terraform enables the **Compute Instance Monitoring** plugin on the instance (`agent_config`). Allow **several minutes** after first boot before **`CpuUtilization`** and related series appear in Metrics Explorer.
-3. Adjust **`vm_shape`** / **`availability_domain_index`** if you hit capacity errors.
-4. Run **`terraform apply`**, then use **`linux_compute_public_ip`** / **`linux_compute_ssh_example`** if you need SSH.
+2. Default **`vm_shape`** in the example is **`VM.Standard.E2.1.Micro`** (lowest-cost Always Free AMD). If you hit **capacity** or **shape not authorized**, switch to **`VM.Standard.A1.Flex`** with **`vm_ocpus`** / **`vm_memory_gb`** and try another **`availability_domain_index`** (0–2).
+3. Terraform enables the **Compute Instance Monitoring** plugin on the instance (`agent_config`). Allow **several minutes** after first boot before **`CpuUtilization`** and related series appear in Metrics Explorer.
+4. Run **`terraform apply`**. If the instance fails with **Out of host capacity**, change **`availability_domain_index`** (0–2) or **`vm_shape`** as in step 2, then apply again.
+5. Use **`linux_compute_public_ip`** / **`linux_compute_ssh_example`** if you need SSH.
 
 Cloud-init installs common tools (`python3-pip`, `jq`, `curl`) and restarts **`oracle-cloud-agent`** when the unit exists. The serverless **function** does not require SSH to the VM; SSH is only for your operations.
 
