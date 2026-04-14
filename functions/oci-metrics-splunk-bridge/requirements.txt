@@ -1,0 +1,6 @@
+fdk>=0.1.48
+oci>=2.126.0
+requests>=2.31.0
+splunk-opentelemetry>=1.15.0
+opentelemetry-instrumentation-requests>=0.43b0
+opentelemetry-instrumentation-logging>=0.43b0

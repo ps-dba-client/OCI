@@ -1,0 +1,16 @@
+# Secrets and local overrides — never commit
+*.tfvars
+!terraform.tfvars.example
+.env
+.env.*
+hl_temp.txt
+*.pem
+.terraform/
+*.tfstate
+*.tfstate.*
+crash.log
+__pycache__/
+*.pyc
+.python-version
+.venv/
+venv/

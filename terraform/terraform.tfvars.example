@@ -1,0 +1,27 @@
+# Copy to terraform.tfvars (gitignored) — do not commit secrets.
+# oci iam compartment list -c <tenancy_ocid> --all
+
+tenancy_ocid     = "ocid1.tenancy.oc1..REPLACE"
+compartment_ocid = "ocid1.compartment.oc1..REPLACE"
+region           = "us-ashburn-1"
+
+ssh_public_key = "ssh-ed25519 AAAA... your-public-key"
+
+# After first docker push to OCIR:
+# function_image = "iad.ocir.io/axxxxx/splunk-oci-lab/metrics-bridge:0.1.0"
+
+splunk_realm = "us1"
+
+# Splunk Observability (metrics + OTLP traces)
+splunk_access_token = "REPLACE_WITH_O11Y_ACCESS_TOKEN"
+
+# Splunk Cloud HEC (logs)
+splunk_hec_url    = "https://http-inputs-example.splunkcloud.com/services/collector/event"
+splunk_hec_token  = "REPLACE_WITH_HEC_TOKEN"
+splunk_hec_index  = "main"
+splunk_hec_source = "oci:metrics-bridge"
+
+# Optional: scan metrics from a different compartment than resource compartment
+# metrics_compartment_ocid = "ocid1.compartment.oc1..REPLACE"
+
+allowed_ssh_cidr = "203.0.113.10/32"
