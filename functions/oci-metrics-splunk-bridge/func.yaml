@@ -1,5 +1,5 @@
 schema_version: 20180708
 name: oci-metrics-splunk-bridge
-version: 0.1.0
+version: 0.1.8
 runtime: docker
 entrypoint: opentelemetry-instrument /usr/local/bin/fdk /function/func.py handler

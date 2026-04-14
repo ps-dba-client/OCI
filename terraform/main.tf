@@ -264,6 +264,10 @@ resource "oci_functions_application" "metrics_app" {
   }
 }
 
+# After changing function_image or app config fingerprint, run a full `terraform apply` (avoid
+# `-target` only the function). Oracle Notifications subscriptions use the function OCID as
+# endpoint; a replaced function gets a new OCID and the subscription must be recreated—partial
+# applies can leave the topic pointing at a deleted function until the next full apply.
 resource "oci_functions_function" "metrics_bridge" {
   count              = var.function_image != "" ? 1 : 0
   application_id     = oci_functions_application.metrics_app.id
@@ -322,6 +326,12 @@ resource "oci_ons_subscription" "metrics_bridge_fn" {
   endpoint       = oci_functions_function.metrics_bridge[0].id
 
   depends_on = [oci_identity_policy.fn_ons_invoke]
+
+  lifecycle {
+    replace_triggered_by = [
+      oci_functions_function.metrics_bridge[count.index].id
+    ]
+  }
 }
 
 data "oci_core_vnic_attachments" "lab_vm" {

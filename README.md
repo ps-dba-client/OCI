@@ -51,7 +51,7 @@ To confirm the function is executing: open the **function** → **Logs** (if log
 
 1. Instrumentation attaches trace context to **outbound HTTP** (e.g. SignalFx ingest, HEC) where supported by the libraries in use.
 2. The Python `logging` formatter adds **`trace_id`** and **`span_id`** on each line written by this function’s logger.
-3. HEC events include **`fields.trace_id`** and **`fields.span_id`**.
+3. HEC events include **`trace_id`** / **`span_id`** on the structured **`event`** payload (and in **`fields`** for indexing). APM shows spans such as **`oci.monitoring.*`**, **`splunk_o11y.ingest_datapoints`**, and **`splunk_cloud.hec_submit`** in addition to HTTP client spans.
 4. In **Splunk Cloud**, search logs by `trace_id`. In **Splunk Observability**, open the trace with the same id (APM / trace viewer) to compare spans with log timestamps.
 
 > Trace propagation into HEC payloads is **best-effort** and depends on library support and active spans at the moment of the HTTP call. For strict correlation guarantees, evolve toward OTLP logs export to Observability or a unified pipeline your org standardizes on.
@@ -61,7 +61,7 @@ To confirm the function is executing: open the **function** → **Logs** (if log
 If the compartment has **no other workloads**, there may be little for OCI Monitoring to report. This stack can add an **Ubuntu 22.04** instance whose **Oracle Cloud Agent** publishes **`oci_computeagent`** metrics (CPU, memory, disk, etc.) for the function to list and forward.
 
 1. In `terraform.tfvars`, set **`create_linux_vm = true`**, **`ssh_public_key`**, and a tight **`allowed_ssh_cidr`** (e.g. your `/32` public IP).
-2. Default **`vm_shape`** in the example is **`VM.Standard.E2.1.Micro`** (lowest-cost Always Free AMD). If you hit **capacity** or **shape not authorized**, switch to **`VM.Standard.A1.Flex`** with **`vm_ocpus`** / **`vm_memory_gb`** and try another **`availability_domain_index`** (0–2).
+2. Prefer **`VM.Standard.E2.1.Micro`** when your tenancy allows it (Always Free AMD). In some regions **`VM.Standard.A1.Flex`** has **no capacity** in every AD; **`E2.1.Micro`** may still launch. If **`E2.1.Micro`** returns **NotAuthorizedOrNotFound**, use **`A1.Flex`** and rotate **`availability_domain_index`** (0–2), another region, or a paid shape.
 3. Terraform enables the **Compute Instance Monitoring** plugin on the instance (`agent_config`). Allow **several minutes** after first boot before **`CpuUtilization`** and related series appear in Metrics Explorer.
 4. Run **`terraform apply`**. If the instance fails with **Out of host capacity**, change **`availability_domain_index`** (0–2) or **`vm_shape`** as in step 2, then apply again.
 5. Use **`linux_compute_public_ip`** / **`linux_compute_ssh_example`** if you need SSH.
@@ -94,7 +94,14 @@ First apply **before** the function image exists: leave `function_image` empty o
 
 - `container_repository_path` — target for `docker tag` / `docker push`
 
-After building and pushing the image (see [docs/DEPLOY-FUNCTION.md](docs/DEPLOY-FUNCTION.md)), set `function_image` in `terraform.tfvars` and run `terraform apply` again.
+After building and pushing the image (see [docs/DEPLOY-FUNCTION.md](docs/DEPLOY-FUNCTION.md)), set `function_image` in `terraform.tfvars` and run **`terraform apply` for the whole stack** (do **not** rely on `apply -target` only the function). Replacing the function issues a **new OCID**; the **Oracle Notifications** subscription that invokes it must be updated in the same apply, or scheduled ticks will target a deleted function until the next full plan.
+
+### Rolling out a new function image
+
+1. Build and push a new tag to OCIR (`linux/amd64`, see [docs/DEPLOY-FUNCTION.md](docs/DEPLOY-FUNCTION.md)).
+2. Set **`function_image`** in `terraform.tfvars` to that URI (bump **`function_deployment_revision`** if you reuse the same tag after a rebuild).
+3. Run **`cd terraform && terraform apply`** (full apply). Confirm **`terraform plan`** is clean afterward.
+4. Optional: `oci fn function invoke` with `--file -` and check Splunk metrics, HEC events, and APM traces.
 
 ### Variable rename notes
 

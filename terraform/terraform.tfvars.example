@@ -15,16 +15,22 @@ region           = "us-ashburn-1"
 # create_linux_vm   = true
 # ssh_public_key    = "ssh-rsa AAAA... comment"
 # allowed_ssh_cidr  = "203.0.113.10/32"  # your public IP / office CIDR
-# vm_shape          = "VM.Standard.E2.1.Micro"  # lowest-cost Always Free; or A1.Flex if capacity/auth issues
-# vm_ocpus          = 1
-# vm_memory_gb      = 1
-# availability_domain_index = 0
+#
+# VM shape: prefer VM.Standard.E2.1.Micro (Always Free AMD). If the tenancy returns NotAuthorized
+# or every AD returns Out of host capacity for VM.Standard.A1.Flex, switch shape or region and
+# re-run terraform apply (see README “Linux VM”).
+# vm_shape                  = "VM.Standard.E2.1.Micro"
+# vm_ocpus                  = 1
+# vm_memory_gb              = 1
+# availability_domain_index = 0   # try 0,1, 2 if capacity errors in a region
 
 # Prefix for resource names and OCIR path segment (default in variables.tf is splunk-oci-sample).
 # resource_prefix = "acme-client-splunk-oci-dev"
 
-# After first docker push to OCIR (path must match resource_prefix/metrics-bridge):
-# function_image = "iad.ocir.io/axxxxx/splunk-oci-sample/metrics-bridge:0.1.0"
+# After docker push to OCIR (path must match ${resource_prefix}/metrics-bridge). Bump tag per build.
+# Run a full `terraform apply` after changing this so Notifications → Function subscription keeps
+# the new function OCID (avoid apply -target only the function).
+# function_image = "iad.ocir.io/<namespace>/<resource_prefix>/metrics-bridge:0.1.8"
 
 splunk_realm = "us1"
 

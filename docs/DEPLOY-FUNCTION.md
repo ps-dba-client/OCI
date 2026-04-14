@@ -31,7 +31,9 @@ Use the regional OCIR hostname (**e.g.** `iad.ocir.io` for Ashburn), build **lin
 
 ```bash
 cd functions/oci-metrics-splunk-bridge
-IMAGE="iad.ocir.io/${NS}/splunk-oci-sample/metrics-bridge:0.1.7"
+PREFIX="${PREFIX:-splunk-oci-sample}"   # must match resource_prefix in terraform.tfvars
+TAG="${TAG:-0.1.8}"
+IMAGE="iad.ocir.io/${NS}/${PREFIX}/metrics-bridge:${TAG}"
 
 docker buildx build --platform linux/amd64 --provenance=false --sbom=false -t "$IMAGE" --push .
 ```
@@ -47,15 +49,26 @@ The repository path prefix must match Terraform: `${resource_prefix}/metrics-bri
 In `terraform/terraform.tfvars`:
 
 ```hcl
-function_image = "iad.ocir.io/your_namespace/splunk-oci-sample/metrics-bridge:0.1.0"
+function_image = "iad.ocir.io/your_namespace/<resource_prefix>/metrics-bridge:0.1.8"
 ```
 
-Use your region’s OCIR hostname (`iad`, `phx`, `fra`, etc.).
+Use your region’s OCIR hostname (`iad`, `phx`, `fra`, etc.). The middle path segment must match **`resource_prefix`** (default `splunk-oci-sample`).
+
+Run a **full** apply so dependent resources stay consistent:
 
 ```bash
 cd terraform
+terraform plan
 terraform apply
 ```
+
+**Do not** use `terraform apply -target=…oci_functions_function…` alone when rolling a new image. The function’s **OCID changes** on replacement; the **Notifications → Function** subscription (`oci_ons_subscription`) must be recreated in the **same** apply. A targeted apply can leave the tick topic invoking an old, deleted function. If you must recover with targets, include at least:
+
+- `terraform_data.metrics_bridge_deploy[0]`
+- `oci_functions_function.metrics_bridge[0]`
+- `oci_ons_subscription.metrics_bridge_fn[0]` (when periodic invoke is enabled)
+
+The Terraform config uses `replace_triggered_by` on the subscription so a new function OCID forces subscription replacement on the next full plan.
 
 ## 5. Invoke (test)
 
@@ -127,6 +140,7 @@ Work through these in order:
 3. **Splunk Cloud (HEC) first**  
    Use **All time** or **Last 24 hours** and search (adjust index/source to your `terraform.tfvars`): `index=db_gcp_dev source="oci:metrics-bridge*" "handler invoked"`  
    or `index=db_gcp_dev "HEC event accepted"`.  
+   HEC **`event`** payloads are **structured JSON** (`message`, stats fields, `trace_id`, etc.), not only a one-line string—expand the Event field or use `spath` if needed.  
    This path uses plain HTTPS from the function. If **nothing** lands here, fix **URL** (`…/services/collector/event`), **token**, and **index** allow-list (or set `SPLUNK_HEC_INDEX` empty in app config so the token default index is used—supported by the function code).
 
 4. **Splunk Observability (traces + OTLP metrics)**  

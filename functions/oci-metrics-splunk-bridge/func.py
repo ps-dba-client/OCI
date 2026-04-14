@@ -32,6 +32,7 @@ from fdk import response
 from oci.monitoring import MonitoringClient
 from oci.monitoring.models import ListMetricsDetails, SummarizeMetricsDataDetails
 from opentelemetry import trace
+from opentelemetry.trace import Status, StatusCode
 
 
 def _region_from_env() -> str:
@@ -104,14 +105,16 @@ def send_hec_event(
     trace_id = format(ctx.trace_id, "032x") if ctx and ctx.is_valid else ""
     span_id = format(ctx.span_id, "016x") if ctx and ctx.is_valid else ""
 
-    fields: Dict[str, Any] = {
+    # Structured `event` so Splunk Search shows full payload in the Event column (not only a plain string).
+    event_obj: Dict[str, Any] = {
+        "message": message,
         "level": level,
         "trace_id": trace_id,
         "span_id": span_id,
         "component": "oci-metrics-splunk-bridge",
     }
     if extra_fields:
-        fields.update(extra_fields)
+        event_obj.update(extra_fields)
 
     hec_index = os.environ.get("SPLUNK_HEC_INDEX", "main").strip()
     body: Dict[str, Any] = {
@@ -119,27 +122,42 @@ def send_hec_event(
         "host": "oci-fn-oci-metrics-splunk-bridge",
         "source": os.environ.get("SPLUNK_HEC_SOURCE", "oci:metrics-bridge"),
         "sourcetype": "oci:metrics-bridge:json",
-        "event": message,
-        "fields": fields,
+        "event": event_obj,
+        # Keep HEC `fields` for indexed metadata / field aliases (trace correlation).
+        "fields": {
+            "level": level,
+            "trace_id": trace_id,
+            "span_id": span_id,
+            "component": "oci-metrics-splunk-bridge",
+        },
     }
     # Omit index so HEC uses the token’s allowed default (some tokens reject client-specified index).
     if hec_index:
         body["index"] = hec_index
 
-    try:
-        r = requests.post(
-            url,
-            headers={"Authorization": f"Splunk {token}"},
-            json=body,
-            timeout=15,
-            verify=_hec_verify(),
-        )
-        if r.status_code < 300:
-            log.info("HEC event accepted http_status=%s", r.status_code)
-        else:
-            log.error("HEC post failed status=%s body=%s", r.status_code, r.text[:500])
-    except Exception:
-        log.exception("HEC post raised")
+    hec_tracer = trace.get_tracer(__name__)
+    with hec_tracer.start_as_current_span(
+        "splunk_cloud.hec_submit",
+        attributes={"splunk.hec.level": level},
+    ) as hec_span:
+        try:
+            r = requests.post(
+                url,
+                headers={"Authorization": f"Splunk {token}"},
+                json=body,
+                timeout=15,
+                verify=_hec_verify(),
+            )
+            hec_span.set_attribute("http.status_code", r.status_code)
+            if r.status_code < 300:
+                log.info("HEC event accepted http_status=%s", r.status_code)
+            else:
+                log.error("HEC post failed status=%s body=%s", r.status_code, r.text[:500])
+                hec_span.set_status(Status(StatusCode.ERROR, f"HTTP {r.status_code}"))
+        except Exception as e:
+            hec_span.record_exception(e)
+            hec_span.set_status(Status(StatusCode.ERROR, str(e)))
+            log.exception("HEC post raised")
 
 
 def _build_query(metric_name: str, dimensions: Dict[str, str], window: str) -> str:
@@ -158,16 +176,27 @@ def _send_signalfx_gauges(
     if not gauges:
         return
     url = f"https://ingest.{realm}.signalfx.com/v2/datapoint"
-    # requests is auto-instrumented when splunk-instrument wraps the process
-    r = requests.post(
-        url,
-        headers={"X-SF-Token": token, "Content-Type": "application/json"},
-        data=json.dumps({"gauge": gauges}),
-        timeout=30,
-    )
-    if r.status_code >= 300:
-        log.error("SignalFx ingest failed status=%s body=%s", r.status_code, r.text[:800])
-        raise RuntimeError(f"SignalFx ingest HTTP {r.status_code}")
+    tracer = trace.get_tracer(__name__)
+    # Manual span names OCI APM waterfall even if HTTP auto-instrumentation misses nested clients.
+    with tracer.start_as_current_span(
+        "splunk_o11y.ingest_datapoints",
+        attributes={
+            "signalfx.realm": realm,
+            "signalfx.url": url,
+            "signalfx.gauge_count": len(gauges),
+        },
+    ) as span:
+        r = requests.post(
+            url,
+            headers={"X-SF-Token": token, "Content-Type": "application/json"},
+            data=json.dumps({"gauge": gauges}),
+            timeout=30,
+        )
+        span.set_attribute("http.status_code", r.status_code)
+        if r.status_code >= 300:
+            log.error("SignalFx ingest failed status=%s body=%s", r.status_code, r.text[:800])
+            span.set_status(Status(StatusCode.ERROR, f"HTTP {r.status_code}"))
+            raise RuntimeError(f"SignalFx ingest HTTP {r.status_code}")
 
 
 def _dims_preview(dims: Dict[str, str], max_len: int = 400) -> str:
@@ -192,6 +221,7 @@ def collect_and_forward(log: logging.Logger) -> int:
     signer = oci.auth.signers.get_resource_principals_signer()
     region = getattr(signer, "region", None) or _region_from_env()
     client = MonitoringClient(config={"region": region}, signer=signer, timeout=(10, 60))
+    tracer = trace.get_tracer(__name__)
 
     end = datetime.now(timezone.utc)
     start = end - timedelta(minutes=window_min)
@@ -243,7 +273,23 @@ def collect_and_forward(log: logging.Logger) -> int:
             kwargs["page"] = opc_next_page
 
         try:
-            lm = client.list_metrics(**kwargs)
+            with tracer.start_as_current_span(
+                "oci.monitoring.list_metrics",
+                attributes={
+                    "oci.compartment_id": compartment,
+                    "oci.region": region,
+                    "oci.list_metrics.page_index": list_page_index,
+                    "oci.list_metrics.subtree": in_subtree,
+                },
+            ) as lm_span:
+                try:
+                    lm = client.list_metrics(**kwargs)
+                except oci.exceptions.ServiceError as e:
+                    lm_span.set_attribute("oci.error.code", e.code)
+                    lm_span.record_exception(e)
+                    lm_span.set_status(Status(StatusCode.ERROR, e.message))
+                    raise
+                lm_span.set_attribute("oci.list_metrics.definitions_returned", len(lm.data or []))
         except oci.exceptions.ServiceError as e:
             log.error("list_metrics ServiceError code=%s message=%s", e.code, e.message)
             send_hec_event(
@@ -290,15 +336,31 @@ def collect_and_forward(log: logging.Logger) -> int:
             query = _build_query(name, dims, window)
             points_before = datapoint_count
             try:
-                sm = client.summarize_metrics_data(
-                    compartment_id=compartment,
-                    summarize_metrics_data_details=SummarizeMetricsDataDetails(
-                        namespace=ns,
-                        query=query,
-                        start_time=start_s,
-                        end_time=end_s,
-                    ),
-                )
+                with tracer.start_as_current_span(
+                    "oci.monitoring.summarize_metrics_data",
+                    attributes={
+                        "oci.metric.namespace": str(ns),
+                        "oci.metric.name": str(name),
+                        "oci.metrics.query": query[:1200],
+                    },
+                ) as sm_span:
+                    try:
+                        sm = client.summarize_metrics_data(
+                            compartment_id=compartment,
+                            summarize_metrics_data_details=SummarizeMetricsDataDetails(
+                                namespace=ns,
+                                query=query,
+                                start_time=start_s,
+                                end_time=end_s,
+                            ),
+                        )
+                    except oci.exceptions.ServiceError as e:
+                        sm_span.set_attribute("oci.error.code", e.code)
+                        sm_span.record_exception(e)
+                        sm_span.set_status(Status(StatusCode.ERROR, e.message))
+                        raise
+                    series_n = len(sm.data or [])
+                    sm_span.set_attribute("oci.summarize.series_count", series_n)
             except oci.exceptions.ServiceError as e:
                 summarize_failures += 1
                 log.warning(
@@ -372,6 +434,12 @@ def collect_and_forward(log: logging.Logger) -> int:
 
     if gauges:
         _send_signalfx_gauges(log, realm, token, gauges)
+    elif datapoint_count == 0:
+        with tracer.start_as_current_span(
+            "splunk_o11y.ingest_datapoints",
+            attributes={"signalfx.skipped": True, "signalfx.skip_reason": "no_datapoints"},
+        ):
+            pass
 
     log.info(
         "Finished metrics collection metric_definitions_scanned=%s datapoints_to_signalfx=%s "
