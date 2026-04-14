@@ -95,7 +95,8 @@ FN_ID="$(terraform output -raw function_id)"
 REGION="$(grep -E '^\s*region\s*=' terraform.tfvars 2>/dev/null | head -1 | sed 's/.*"\(.*\)".*/\1/')"
 REGION="${REGION:-us-ashburn-1}"
 
-oci fn function invoke --function-id "$FN_ID" --file /dev/null --body '{}' \
+# Use --file - so the function response goes to stdout (required for jq). /dev/null discards the body and can leave non-JSON noise on stdout.
+oci fn function invoke --function-id "$FN_ID" --file - --body '{}' \
   --auth security_token --profile danbag --region "$REGION" | jq .
 ```
 
@@ -117,7 +118,7 @@ Work through these in order:
 1. **Confirm something is invoking the function**  
    - **Scheduled:** **Observability & Management → Alarm definitions** → open **`…-metrics-tick`**. It should be **FIRING** (not **OK** / **Insufficient data** for long periods). **Developer Services → Notifications → Topics** → your tick topic → **Subscriptions** → Function subscription **Active**.  
    - **Manual test (fastest)** (session profile example):  
-     `oci fn function invoke --function-id "$(cd terraform && terraform output -raw function_id)" --file /dev/null --body '{}' --auth security_token --profile danbag --region us-ashburn-1 | jq .`  
+     `oci fn function invoke --function-id "$(cd terraform && terraform output -raw function_id)" --file - --body '{}' --auth security_token --profile danbag --region us-ashburn-1 | jq .`  
      Expect `{"status":"ok","processed_metric_definitions":N}` or a JSON error you can act on.
 
 2. **OCI “Logs” for the function**  
@@ -137,7 +138,7 @@ Work through these in order:
 ### Nothing in Splunk (metrics, traces, or HEC logs)
 
 1. **Rebuild and push the image** after any `Dockerfile` / `func.py` / `requirements.txt` change, bump the tag, set `function_image` in `terraform.tfvars`, and run **`terraform apply`**. Old images only ran `fdk` and did **not** load the Splunk OTEL distro; traces need **`opentelemetry-instrument`** plus **`OTEL_PYTHON_DISTRO=splunk_distro`** on the Functions app (already in Terraform `main.tf`).
-2. **Confirm the function runs**: `oci fn function invoke --function-id "$(terraform output -raw function_id)" --file /dev/null --body '{}'`. Response should be `{"status":"ok",...}` or an error JSON. Watch **OCI Logging** for the app (or Functions invocation logs) for lines starting with `handler invoked` — they show whether HEC / access token / compartment env vars are present (booleans only, no secrets).
+2. **Confirm the function runs**: `oci fn function invoke --function-id "$(terraform output -raw function_id)" --file - --body '{}' --auth security_token --profile danbag --region us-ashburn-1`. Response should be `{"status":"ok",...}` or an error JSON. If **`jq` fails** with “parse error”, you used `--file /dev/null` (response discarded) or the CLI printed a non-JSON line—run without `| jq` or use `--file -`. Watch **OCI Logging** for lines like `handler invoked` or `HEC event accepted`.
 3. **Splunk Observability (traces / OTLP)**  
    - **`SPLUNK_REALM`** (e.g. `us1`) and **`SPLUNK_ACCESS_TOKEN`** must be a valid **ingest** access token.  
    - In **APM / Trace Analyzer**, filter `service.name = oci-metrics-splunk-bridge` (or your `OTEL_SERVICE_NAME`).

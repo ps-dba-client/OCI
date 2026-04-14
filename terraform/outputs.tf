@@ -22,7 +22,7 @@ output "function_id" {
 
 output "invoke_hint" {
   description = "Invoke the function after deploy (requires OCI CLI auth)"
-  value       = "oci fn function invoke --function-id <FUNCTION_OCID> --file /dev/null"
+  value       = "oci fn function invoke --function-id <FUNCTION_OCID> --file - --body '{}' --auth security_token --profile <profile>"
 }
 
 output "metrics_tick_topic_id" {
