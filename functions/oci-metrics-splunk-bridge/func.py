@@ -322,8 +322,17 @@ def collect_and_forward(log: logging.Logger) -> int:
 
 def handler(ctx, data=None):
     log = setup_logging()
+    log.info(
+        "handler invoked realm=%s hec_configured=%s access_token_configured=%s compartment_configured=%s",
+        os.environ.get("SPLUNK_REALM", ""),
+        bool(os.environ.get("SPLUNK_HEC_URL", "").strip() and os.environ.get("SPLUNK_HEC_TOKEN", "").strip()),
+        bool(os.environ.get("SPLUNK_ACCESS_TOKEN", "").strip()),
+        bool(os.environ.get("METRICS_COMPARTMENT_OCID", "").strip()),
+    )
     try:
-        processed = collect_and_forward(log)
+        tracer = trace.get_tracer(__name__)
+        with tracer.start_as_current_span("oci_metrics_bridge_invoke"):
+            processed = collect_and_forward(log)
         body = {"status": "ok", "processed_metric_definitions": processed}
         return response.Response(
             ctx,

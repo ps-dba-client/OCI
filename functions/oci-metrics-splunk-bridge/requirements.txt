@@ -1,6 +1,7 @@
 fdk>=0.1.48
 oci>=2.126.0
 requests>=2.31.0
-splunk-opentelemetry>=1.15.0
+#2.x uses splunk_otel + opentelemetry_distro entrypoint "splunk_distro"
+splunk-opentelemetry>=2.0.0,<3
 opentelemetry-instrumentation-requests>=0.43b0
 opentelemetry-instrumentation-logging>=0.43b0

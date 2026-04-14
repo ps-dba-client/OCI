@@ -12,5 +12,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY func.py /function/func.py
 
-# FDK 0.1.109+ expects the fdk CLI as entrypoint (not python -m / fdk.handle).
-ENTRYPOINT ["/usr/local/bin/fdk", "/function/func.py", "handler"]
+# FDK runs the handler; opentelemetry-instrument loads the Splunk OTEL distro and instrumentors
+# (set OTEL_PYTHON_DISTRO=splunk_distro on the Functions app).
+ENTRYPOINT ["opentelemetry-instrument", "/usr/local/bin/fdk", "/function/func.py", "handler"]

@@ -24,3 +24,33 @@ output "invoke_hint" {
   description = "Invoke the function after deploy (requires OCI CLI auth)"
   value       = "oci fn function invoke --function-id <FUNCTION_OCID> --file /dev/null"
 }
+
+output "metrics_tick_topic_id" {
+  description = "ONS topic receiving tick alarm notifications (empty if periodic invoke disabled)"
+  value       = try(oci_ons_notification_topic.metrics_bridge_tick[0].id, null)
+}
+
+output "metrics_tick_alarm_id" {
+  description = "Monitoring alarm that repeats while FIRING (empty if periodic invoke disabled)"
+  value       = try(oci_monitoring_alarm.metrics_bridge_tick[0].id, null)
+}
+
+output "linux_compute_instance_id" {
+  description = "OCID of the optional Ubuntu instance (null if create_linux_vm is false)"
+  value       = try(oci_core_instance.lab_vm[0].id, null)
+}
+
+output "linux_compute_public_ip" {
+  description = "Public IPv4 of the optional instance (null if create_linux_vm is false)"
+  value       = length(data.oci_core_vnic.lab_vm_primary) > 0 ? data.oci_core_vnic.lab_vm_primary[0].public_ip_address : null
+}
+
+output "linux_compute_ssh_user" {
+  description = "Default login user for the Canonical Ubuntu image"
+  value       = var.create_linux_vm ? "ubuntu" : null
+}
+
+output "linux_compute_ssh_example" {
+  description = "Example ssh command (replace -i path to your private key)"
+  value       = length(data.oci_core_vnic.lab_vm_primary) > 0 ? "ssh -i ~/.ssh/<your_private_key> ubuntu@${data.oci_core_vnic.lab_vm_primary[0].public_ip_address}" : null
+}

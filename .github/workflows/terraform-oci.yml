@@ -1,0 +1,119 @@
+# OCI Terraform using long-lived IAM API key (no browser session).
+# Configure repository Secrets (and optional Variables) per docs/DEPLOY-GITHUB.md.
+
+name: Terraform (OCI)
+
+on:
+  pull_request:
+    paths:
+      - "terraform/**"
+      - ".github/workflows/terraform-oci.yml"
+  workflow_dispatch:
+    inputs:
+      terraform_action:
+        description: "terraform plan or apply (uses OCI API key secrets)"
+        type: choice
+        required: true
+        default: plan
+        options:
+          - plan
+          - apply
+
+concurrency:
+  group: terraform-oci-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  fmt-validate:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: terraform
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.5.7"
+
+      - name: Terraform fmt
+        run: terraform fmt -check -recursive
+
+      - name: Terraform init
+        run: terraform init -input=false
+
+      - name: Terraform validate
+        run: terraform validate
+
+  plan-apply:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: terraform
+    env:
+      TF_VAR_oci_provider_auth: ApiKey
+      TF_VAR_oci_config_profile: DEFAULT
+      TF_VAR_tenancy_ocid: ${{ secrets.OCI_TENANCY_OCID }}
+      TF_VAR_compartment_ocid: ${{ secrets.OCI_COMPARTMENT_OCID }}
+      TF_VAR_region: ${{ secrets.OCI_REGION }}
+      TF_VAR_splunk_realm: ${{ secrets.SPLUNK_REALM }}
+      TF_VAR_splunk_access_token: ${{ secrets.SPLUNK_ACCESS_TOKEN }}
+      TF_VAR_splunk_hec_url: ${{ secrets.SPLUNK_HEC_URL }}
+      TF_VAR_splunk_hec_token: ${{ secrets.SPLUNK_HEC_TOKEN }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.5.7"
+
+      - name: Write OCI API key and config
+        env:
+          OCI_USER_OCID: ${{ secrets.OCI_USER_OCID }}
+          OCI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
+          OCI_TENANCY_OCID: ${{ secrets.OCI_TENANCY_OCID }}
+          OCI_REGION: ${{ secrets.OCI_REGION }}
+          OCI_PRIVATE_KEY: ${{ secrets.OCI_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.oci"
+          printf '%s\n' "$OCI_PRIVATE_KEY" > "$HOME/.oci/oci_api_key.pem"
+          chmod 600 "$HOME/.oci/oci_api_key.pem"
+          {
+            echo "[DEFAULT]"
+            echo "user=${OCI_USER_OCID}"
+            echo "fingerprint=${OCI_FINGERPRINT}"
+            echo "tenancy=${OCI_TENANCY_OCID}"
+            echo "region=${OCI_REGION}"
+            echo "key_file=$HOME/.oci/oci_api_key.pem"
+          } > "$HOME/.oci/config"
+
+      - name: Optional Terraform variables (GitHub Actions Variables / Secrets)
+        run: |
+          set -euo pipefail
+          # Only export when set so Terraform keeps defaults for unset options.
+          add_var() { [ -n "$2" ] && echo "$1=$2" >> "$GITHUB_ENV" || true; }
+          add_var TF_VAR_resource_prefix "${{ vars.TF_VAR_resource_prefix }}"
+          add_var TF_VAR_function_image "${{ vars.TF_VAR_function_image }}"
+          add_var TF_VAR_splunk_hec_index "${{ vars.TF_VAR_splunk_hec_index }}"
+          add_var TF_VAR_splunk_hec_source "${{ vars.TF_VAR_splunk_hec_source }}"
+          add_var TF_VAR_metrics_list_in_subtree "${{ vars.TF_VAR_metrics_list_in_subtree }}"
+          add_var TF_VAR_create_linux_vm "${{ vars.TF_VAR_create_linux_vm }}"
+          add_var TF_VAR_allowed_ssh_cidr "${{ vars.TF_VAR_allowed_ssh_cidr }}"
+          add_var TF_VAR_ssh_public_key "${{ secrets.TF_VAR_ssh_public_key }}"
+          add_var TF_VAR_availability_domain_index "${{ vars.TF_VAR_availability_domain_index }}"
+          add_var TF_VAR_function_deployment_revision "${{ vars.TF_VAR_function_deployment_revision }}"
+
+      - name: Terraform init
+        run: terraform init -input=false
+
+      - name: Terraform plan
+        if: github.event.inputs.terraform_action == 'plan'
+        run: terraform plan -input=false -no-color
+
+      - name: Terraform apply
+        if: github.event.inputs.terraform_action == 'apply'
+        run: terraform apply -input=false -auto-approve -no-color

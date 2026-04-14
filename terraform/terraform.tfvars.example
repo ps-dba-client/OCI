@@ -1,12 +1,30 @@
 # Copy to terraform.tfvars (gitignored) — do not commit secrets.
 # oci iam compartment list -c <tenancy_ocid> --all
 
+# Auth for Terraform (oracle/oci provider):
+# - ApiKey: add to ~/.oci/config for your profile: user = "<IAM user OCID>", fingerprint, key_file = path to private PEM (Identity → Users → API keys).
+# - SecurityToken: use `oci session authenticate --profile NAME` when it expires (browser).
+# oci_provider_auth = "ApiKey"
+# oci_config_profile     = "danbag"
+
 tenancy_ocid     = "ocid1.tenancy.oc1..REPLACE"
 compartment_ocid = "ocid1.compartment.oc1..REPLACE"
 region           = "us-ashburn-1"
 
-# After first docker push to OCIR:
-# function_image = "iad.ocir.io/axxxxx/splunk-oci-lab/metrics-bridge:0.1.0"
+# Ubuntu 22.04 VM: emits oci_computeagent metrics when you have no other services (recommended for demos).
+# create_linux_vm   = true
+# ssh_public_key    = "ssh-rsa AAAA... comment"
+# allowed_ssh_cidr  = "203.0.113.10/32"  # your public IP / office CIDR
+# vm_shape          = "VM.Standard.A1.Flex"  # or VM.Standard.E2.1.Micro where available
+# vm_ocpus          = 1
+# vm_memory_gb      = 1
+# availability_domain_index = 0
+
+# Prefix for resource names and OCIR path segment (default in variables.tf is splunk-oci-sample).
+# resource_prefix = "acme-client-splunk-oci-dev"
+
+# After first docker push to OCIR (path must match resource_prefix/metrics-bridge):
+# function_image = "iad.ocir.io/axxxxx/splunk-oci-sample/metrics-bridge:0.1.0"
 
 splunk_realm = "us1"
 
@@ -24,3 +42,9 @@ splunk_hec_source = "oci:metrics-bridge"
 
 # Set true only when metrics compartment is the tenancy (root); required for root scans.
 # metrics_list_in_subtree = true
+
+# Periodic runs: Monitoring alarm → Notifications topic → Function (default: every 5 minutes).
+# enable_periodic_invoke      = true
+# schedule_interval_minutes   = 5
+# tick_alarm_namespace        = "oci_internet_gateway"
+# tick_alarm_query            = ""  # optional MQL override; default uses this stack’s Internet Gateway
