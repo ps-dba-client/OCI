@@ -113,15 +113,18 @@ def send_hec_event(
     if extra_fields:
         fields.update(extra_fields)
 
-    body = {
+    hec_index = os.environ.get("SPLUNK_HEC_INDEX", "main").strip()
+    body: Dict[str, Any] = {
         "time": int(time.time()),
         "host": "oci-fn-oci-metrics-splunk-bridge",
         "source": os.environ.get("SPLUNK_HEC_SOURCE", "oci:metrics-bridge"),
         "sourcetype": "oci:metrics-bridge:json",
-        "index": os.environ.get("SPLUNK_HEC_INDEX", "main"),
         "event": message,
         "fields": fields,
     }
+    # Omit index so HEC uses the token’s allowed default (some tokens reject client-specified index).
+    if hec_index:
+        body["index"] = hec_index
 
     try:
         r = requests.post(
@@ -131,7 +134,9 @@ def send_hec_event(
             timeout=15,
             verify=_hec_verify(),
         )
-        if r.status_code >= 300:
+        if r.status_code < 300:
+            log.info("HEC event accepted http_status=%s", r.status_code)
+        else:
             log.error("HEC post failed status=%s body=%s", r.status_code, r.text[:500])
     except Exception:
         log.exception("HEC post raised")

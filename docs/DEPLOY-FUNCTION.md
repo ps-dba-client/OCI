@@ -87,10 +87,21 @@ OCI does **not** issue a separate “function API key”: invocations are author
 
 ### Invoke once
 
+Session-based profiles in `~/.oci/config` often have **no `user` OCID** (only `security_token_file`). Without an API-key profile, the CLI **must** use the session:
+
 ```bash
+cd terraform
 FN_ID="$(terraform output -raw function_id)"
-oci fn function invoke --function-id "$FN_ID" --file /dev/null --body '{}' | jq .
+REGION="$(grep -E '^\s*region\s*=' terraform.tfvars 2>/dev/null | head -1 | sed 's/.*"\(.*\)".*/\1/')"
+REGION="${REGION:-us-ashburn-1}"
+
+oci fn function invoke --function-id "$FN_ID" --file /dev/null --body '{}' \
+  --auth security_token --profile danbag --region "$REGION" | jq .
 ```
+
+If you instead add **`user`**, **`fingerprint`**, and **`key_file`** to a profile (no `security_token_file`), you can omit `--auth security_token` and use **ApiKey** auth.
+
+**If your invoke never reaches OCI** and the CLI prints `user | missing`, you skipped `--auth security_token` or have not configured an API key profile—Splunk will stay empty because the function did not run.
 
 Inspect Function logs in OCI Logging (if enabled) and confirm:
 
@@ -105,15 +116,17 @@ Work through these in order:
 
 1. **Confirm something is invoking the function**  
    - **Scheduled:** **Observability & Management → Alarm definitions** → open **`…-metrics-tick`**. It should be **FIRING** (not **OK** / **Insufficient data** for long periods). **Developer Services → Notifications → Topics** → your tick topic → **Subscriptions** → Function subscription **Active**.  
-   - **Manual test (fastest):**  
-     `oci fn function invoke --function-id "$(cd terraform && terraform output -raw function_id)" --file /dev/null --body '{}' | jq .`  
+   - **Manual test (fastest)** (session profile example):  
+     `oci fn function invoke --function-id "$(cd terraform && terraform output -raw function_id)" --file /dev/null --body '{}' --auth security_token --profile danbag --region us-ashburn-1 | jq .`  
      Expect `{"status":"ok","processed_metric_definitions":N}` or a JSON error you can act on.
 
 2. **OCI “Logs” for the function**  
    Stdout from the container is **not always** the same as the Functions wizard “Logs” tab until **Logging** is wired. Check **Observability & Management → Logging → Log search** (or your org’s log explorer) and filter by **resource** / **function** if you enabled a log. If you see nothing, rely on **Splunk HEC** first (below)—`handler invoked` should appear on every run when HEC URL/token/index are valid.
 
 3. **Splunk Cloud (HEC) first**  
-   Search your HEC index for `handler invoked` or `oci:metrics-bridge` / your `SPLUNK_HEC_SOURCE`. This path uses plain HTTPS from the function and is the easiest signal that the container ran. If **nothing** lands here, fix **URL** (`…/services/collector/event`), **token**, and **index** allow-list before debugging Observability.
+   Use **All time** or **Last 24 hours** and search (adjust index/source to your `terraform.tfvars`): `index=db_gcp_dev source="oci:metrics-bridge*" "handler invoked"`  
+   or `index=db_gcp_dev "HEC event accepted"`.  
+   This path uses plain HTTPS from the function. If **nothing** lands here, fix **URL** (`…/services/collector/event`), **token**, and **index** allow-list (or set `SPLUNK_HEC_INDEX` empty in app config so the token default index is used—supported by the function code).
 
 4. **Splunk Observability (traces + OTLP metrics)**  
    Requires a valid **ingest** access token and **`SPLUNK_REALM`**. In **APM / Trace Analyzer**, filter `service.name = oci-metrics-splunk-bridge` (or your `OTEL_SERVICE_NAME`). If traces are empty but HEC works, token/realm or OTLP egress was wrong—Terraform sets OTLP to **HTTP/protobuf** (not gRPC) to work through NAT.
