@@ -64,12 +64,15 @@ resource "oci_core_security_list" "public" {
   vcn_id         = oci_core_vcn.lab.id
   display_name   = "${var.lab_prefix}-sl-public"
 
-  ingress_security_rules {
-    protocol = "6"
-    source   = var.allowed_ssh_cidr
-    tcp_options {
-      min = 22
-      max = 22
+  dynamic "ingress_security_rules" {
+    for_each = var.create_lab_vm ? [1] : []
+    content {
+      protocol = "6"
+      source   = var.allowed_ssh_cidr
+      tcp_options {
+        min = 22
+        max = 22
+      }
     }
   }
 

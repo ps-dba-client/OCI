@@ -5,8 +5,6 @@ tenancy_ocid     = "ocid1.tenancy.oc1..REPLACE"
 compartment_ocid = "ocid1.compartment.oc1..REPLACE"
 region           = "us-ashburn-1"
 
-ssh_public_key = "ssh-ed25519 AAAA... your-public-key"
-
 # After first docker push to OCIR:
 # function_image = "iad.ocir.io/axxxxx/splunk-oci-lab/metrics-bridge:0.1.0"
 
@@ -26,12 +24,3 @@ splunk_hec_source = "oci:metrics-bridge"
 
 # Set true only when metrics compartment is the tenancy (root); required for root scans.
 # metrics_list_in_subtree = true
-
-# Optional VM (disable if region has no Always Free capacity)
-# create_lab_vm = false
-# vm_shape                 = "VM.Standard.A1.Flex"
-# vm_ocpus                 = 1
-# vm_memory_gb             = 6
-# availability_domain_index = 1
-
-allowed_ssh_cidr = "203.0.113.10/32"

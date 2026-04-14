@@ -1,12 +1,14 @@
-# OCI lab: low-cost Linux VM + serverless metrics bridge (Splunk)
+# OCI lab: serverless metrics bridge (Splunk)
 
-This repo provisions a **small Oracle Cloud Infrastructure (OCI) VM**, a **Functions** application, and a **container image** that:
+This repo provisions an **OCI Functions** application and a **container image** that:
 
 - Lists and summarizes metrics from **OCI Monitoring** in a chosen compartment (capped per invocation to stay within function time limits).
 - Sends **gauge datapoints** to **Splunk Observability Cloud** (SignalFx ingest API).
 - Emits **structured logs** to **Splunk Cloud** via **HTTP Event Collector (HEC)**.
 
-**Traces** are produced with **Splunk OpenTelemetry auto-instrumentation** (`splunk-instrument` wrapping the process). Application code does **not** create spans manually. **Logs** include `trace_id` and `span_id` (when a span is active) so you can correlate with traces in Splunk Observability.
+Supporting **networking** (VCN, private subnet, NAT) gives the function **egress** to reach Splunk over HTTPS. **Metrics** come from OCI Monitoring via the function’s **resource principal** (dynamic group + policy), not from a separate compute host.
+
+**Traces / logs:** The code is structured for **OpenTelemetry** (Splunk distro) and **FDK** as the process entrypoint. **Logs** include `trace_id` and `span_id` when a span is active so you can correlate with traces in Splunk Observability where instrumentation applies.
 
 ## Security (read first)
 
@@ -25,7 +27,7 @@ This repo provisions a **small Oracle Cloud Infrastructure (OCI) VM**, a **Funct
 
 ## Correlating traces and logs
 
-1. Auto-instrumentation (`splunk-instrument`) attaches trace context to **outbound HTTP** (e.g. SignalFx ingest, HEC) where supported by instrumentation libraries.
+1. Instrumentation attaches trace context to **outbound HTTP** (e.g. SignalFx ingest, HEC) where supported by the libraries in use.
 2. The Python `logging` formatter adds **`trace_id`** and **`span_id`** on each line written by this function’s logger.
 3. HEC events include **`fields.trace_id`** and **`fields.span_id`**.
 4. In **Splunk Cloud**, search logs by `trace_id`. In **Splunk Observability**, open the trace with the same id (APM / trace viewer) to compare spans with log timestamps.
@@ -36,10 +38,9 @@ This repo provisions a **small Oracle Cloud Infrastructure (OCI) VM**, a **Funct
 
 | Area | Purpose |
 |------|---------|
-| `VCN` + public subnet | Low-cost **Ubuntu** VM with SSH |
-| Private subnet + **NAT** | **Functions** egress to Splunk HTTPS |
+| `VCN` + **private subnet** + **NAT** | **Functions** egress to Splunk HTTPS |
 | `oci_functions_application` | Injects **non-secret and secret** config keys (lab pattern) |
-| `oci_functions_function` | Created once `function_image` is set (after first Docker push) |
+| `oci_functions_function` | Created once `function_image` is set (after Docker push) |
 | Dynamic group + policy | Lets functions call **Monitoring** APIs in the metrics compartment |
 
 ### Apply
@@ -57,7 +58,6 @@ terraform apply
 First apply **before** the function image exists: leave `function_image` empty or omit it. Note outputs:
 
 - `container_repository_path` — target for `docker tag` / `docker push`
-- `lab_vm_public_ip` — SSH to the VM (`ubuntu` user on Canonical Ubuntu images unless overridden)
 
 After building and pushing the image (see [docs/DEPLOY-FUNCTION.md](docs/DEPLOY-FUNCTION.md)), set `function_image` in `terraform.tfvars` and run `terraform apply` again.
 
@@ -65,8 +65,8 @@ After building and pushing the image (see [docs/DEPLOY-FUNCTION.md](docs/DEPLOY-
 
 OCI does not include a built-in “cron for Functions” in this minimal stack. Practical lab options:
 
-- **Invoke from the lab VM** on a schedule (`cron` + `oci fn function invoke` with instance principal and a narrow IAM policy), or
-- An external scheduler (CI, automation tool) with a technical user and API key.
+- **OCI** automation (Events, **Automation** / scheduled workflows, or similar) invoking the function or its endpoint.
+- An **external scheduler** (CI, runbook host, enterprise job runner) using `oci fn function invoke` with a technical identity.
 
 Document your org’s preferred pattern before production use.
 
@@ -82,4 +82,4 @@ See [docs/DEPLOY-GITHUB.md](docs/DEPLOY-GITHUB.md) for initializing this tree as
 
 ## Disclaimer
 
-This is **lab** scaffolding: permissive SSH CIDR, secrets in Function config, and a **best-effort** subset of OCI Monitoring (list + summarize with a per-invoke cap). Harden networking, IAM, secrets, and metric cardinality before production.
+This is **lab** scaffolding: secrets in Function config, and a **best-effort** subset of OCI Monitoring (list + summarize with a per-invoke cap). Harden networking, IAM, secrets, and metric cardinality before production.

@@ -12,8 +12,8 @@ variable "availability_domain_index" {
 
 variable "create_lab_vm" {
   type        = bool
-  description = "Optional Ubuntu VM in the public subnet (disable if region/AD has no capacity)"
-  default     = true
+  description = "Advanced: optional public-subnet instance (requires ssh_public_key and regional capacity; default off)"
+  default     = false
 }
 
 variable "tenancy_ocid" {
@@ -28,7 +28,13 @@ variable "compartment_ocid" {
 
 variable "ssh_public_key" {
   type        = string
-  description = "SSH public key for the lab VM (same format as ~/.ssh/id_ed25519.pub)"
+  description = "Required only if create_lab_vm is true"
+  default     = ""
+
+  validation {
+    condition     = !var.create_lab_vm || length(trimspace(var.ssh_public_key)) > 0
+    error_message = "ssh_public_key must be set when create_lab_vm is true."
+  }
 }
 
 variable "lab_prefix" {
@@ -117,6 +123,6 @@ variable "max_metrics_per_invoke" {
 
 variable "allowed_ssh_cidr" {
   type        = string
-  description = "CIDR allowed SSH to lab VM"
+  description = "Used only when create_lab_vm is true (SSH to optional compute)"
   default     = "0.0.0.0/0"
 }
