@@ -253,6 +253,10 @@ resource "oci_functions_application" "metrics_app" {
     # Splunk distro sets OTLP trace/metric endpoints from SPLUNK_REALM + SPLUNK_ACCESS_TOKEN
     OTEL_TRACES_EXPORTER  = "otlp"
     OTEL_METRICS_EXPORTER = "otlp"
+    # Use HTTP/protobuf (not gRPC) so egress through NAT works reliably for OTLP.
+    OTEL_EXPORTER_OTLP_PROTOCOL         = "http/protobuf"
+    OTEL_EXPORTER_OTLP_TRACES_PROTOCOL  = "http/protobuf"
+    OTEL_EXPORTER_OTLP_METRICS_PROTOCOL = "http/protobuf"
     # Realm-based config only sets trace + metric OTLP URLs; avoid failing log exporter (logs use HEC)
     OTEL_LOGS_EXPORTER = "none"
   }
@@ -279,7 +283,7 @@ resource "oci_identity_policy" "fn_ons_invoke" {
   compartment_id = var.tenancy_ocid
   description    = "Allow Notifications service to invoke metrics-bridge functions (alarm/topic tick)"
   name           = replace("${var.resource_prefix}-ons-fn-invoke", "-", "_")
-   # Oracle docs often show `ons`; many tenancies require the IAM principal `notification` instead.
+  # Oracle docs often show `ons`; many tenancies require the IAM principal `notification` instead.
   statements = [
     "Allow service notification to use functions-family in compartment id ${var.compartment_ocid}",
   ]

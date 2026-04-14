@@ -99,6 +99,28 @@ Inspect Function logs in OCI Logging (if enabled) and confirm:
 
 ## 6. Troubleshooting
 
+### Application appears in the console but no logs, traces, or metrics
+
+Work through these in order:
+
+1. **Confirm something is invoking the function**  
+   - **Scheduled:** **Observability & Management → Alarm definitions** → open **`…-metrics-tick`**. It should be **FIRING** (not **OK** / **Insufficient data** for long periods). **Developer Services → Notifications → Topics** → your tick topic → **Subscriptions** → Function subscription **Active**.  
+   - **Manual test (fastest):**  
+     `oci fn function invoke --function-id "$(cd terraform && terraform output -raw function_id)" --file /dev/null --body '{}' | jq .`  
+     Expect `{"status":"ok","processed_metric_definitions":N}` or a JSON error you can act on.
+
+2. **OCI “Logs” for the function**  
+   Stdout from the container is **not always** the same as the Functions wizard “Logs” tab until **Logging** is wired. Check **Observability & Management → Logging → Log search** (or your org’s log explorer) and filter by **resource** / **function** if you enabled a log. If you see nothing, rely on **Splunk HEC** first (below)—`handler invoked` should appear on every run when HEC URL/token/index are valid.
+
+3. **Splunk Cloud (HEC) first**  
+   Search your HEC index for `handler invoked` or `oci:metrics-bridge` / your `SPLUNK_HEC_SOURCE`. This path uses plain HTTPS from the function and is the easiest signal that the container ran. If **nothing** lands here, fix **URL** (`…/services/collector/event`), **token**, and **index** allow-list before debugging Observability.
+
+4. **Splunk Observability (traces + OTLP metrics)**  
+   Requires a valid **ingest** access token and **`SPLUNK_REALM`**. In **APM / Trace Analyzer**, filter `service.name = oci-metrics-splunk-bridge` (or your `OTEL_SERVICE_NAME`). If traces are empty but HEC works, token/realm or OTLP egress was wrong—Terraform sets OTLP to **HTTP/protobuf** (not gRPC) to work through NAT.
+
+5. **Custom OCI metrics in Observability (SignalFx ingest)**  
+   The bridge posts gauges to **`https://ingest.<realm>.signalfx.com/v2/datapoint`**. In **Metric Finder**, look for **`oci.*`**. If **`processed_metric_definitions`** is `0` in the invoke response, **OCI Monitoring** returned no metric definitions to process (empty compartment, wrong compartment, or delay after creating a metrics source such as the optional Linux VM).
+
 ### Nothing in Splunk (metrics, traces, or HEC logs)
 
 1. **Rebuild and push the image** after any `Dockerfile` / `func.py` / `requirements.txt` change, bump the tag, set `function_image` in `terraform.tfvars`, and run **`terraform apply`**. Old images only ran `fdk` and did **not** load the Splunk OTEL distro; traces need **`opentelemetry-instrument`** plus **`OTEL_PYTHON_DISTRO=splunk_distro`** on the Functions app (already in Terraform `main.tf`).
