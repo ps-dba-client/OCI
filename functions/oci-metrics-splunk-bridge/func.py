@@ -137,7 +137,7 @@ def send_hec_event(
         log.exception("HEC post raised")
 
 
-def _build_query(metric_name: str, namespace: str, dimensions: Dict[str, str], window: str) -> str:
+def _build_query(metric_name: str, dimensions: Dict[str, str], window: str) -> str:
     if dimensions:
         dim_pairs = ",".join(f'{k}="{v}"' for k, v in dimensions.items())
         return f"{metric_name}[{window}]{{{dim_pairs}}}.mean()"
@@ -239,7 +239,7 @@ def collect_and_forward(log: logging.Logger) -> int:
             ns = item.namespace
             dims = dict(item.dimensions or {})
 
-            query = _build_query(name, ns, dims, window)
+            query = _build_query(name, dims, window)
             try:
                 sm = client.summarize_metrics_data(
                     compartment_id=compartment,
