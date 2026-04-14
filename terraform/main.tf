@@ -122,8 +122,10 @@ resource "oci_core_subnet" "private" {
 }
 
 resource "oci_core_instance" "lab_vm" {
+  count               = var.create_lab_vm ? 1 : 0
   compartment_id      = var.compartment_ocid
-  availability_domain = data.oci_identity_availability_domains.ads.availability_domains[0].name
+  # AD-1 often hits capacity for Always Free; rotate index if launch fails.
+  availability_domain = data.oci_identity_availability_domains.ads.availability_domains[var.availability_domain_index].name
   display_name        = "${var.lab_prefix}-vm"
   shape               = var.vm_shape
 
@@ -194,6 +196,8 @@ resource "oci_functions_application" "metrics_app" {
     SPLUNK_HEC_INDEX           = var.splunk_hec_index
     SPLUNK_HEC_SOURCE          = var.splunk_hec_source
     METRICS_COMPARTMENT_OCID   = local.metrics_scope
+    # list_metrics API: subtree=true only valid when compartment_id is tenancy (root); required for root scans.
+    LIST_METRICS_IN_SUBTREE    = var.metrics_list_in_subtree ? "true" : "false"
     MAX_METRICS_PER_INVOKE     = var.max_metrics_per_invoke
     OCI_METRICS_WINDOW_MINUTES = "5"
     OTEL_SERVICE_NAME          = "oci-metrics-splunk-bridge"
@@ -213,10 +217,12 @@ resource "oci_functions_function" "metrics_bridge" {
 }
 
 data "oci_core_vnic_attachments" "lab_vm" {
+  count          = var.create_lab_vm ? 1 : 0
   compartment_id = var.compartment_ocid
-  instance_id    = oci_core_instance.lab_vm.id
+  instance_id    = oci_core_instance.lab_vm[0].id
 }
 
 data "oci_core_vnic" "lab_vm_primary" {
-  vnic_id = data.oci_core_vnic_attachments.lab_vm.vnic_attachments[0].vnic_id
+  count   = var.create_lab_vm ? 1 : 0
+  vnic_id = data.oci_core_vnic_attachments.lab_vm[0].vnic_attachments[0].vnic_id
 }

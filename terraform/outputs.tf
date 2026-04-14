@@ -1,6 +1,6 @@
 output "lab_vm_public_ip" {
-  description = "Public IP of the low-cost lab VM"
-  value       = data.oci_core_vnic.lab_vm_primary.public_ip_address
+  description = "Public IP of the low-cost lab VM (null if create_lab_vm is false)"
+  value       = var.create_lab_vm ? data.oci_core_vnic.lab_vm_primary[0].public_ip_address : null
 }
 
 output "vcn_id" {

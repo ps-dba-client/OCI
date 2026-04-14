@@ -27,15 +27,18 @@ docker login "${REGION}.ocir.io"
 
 ## 3. Build and push
 
-From repo root:
+Use the regional OCIR hostname (**e.g.** `iad.ocir.io` for Ashburn), build **linux/amd64** for OCI Functions, and disable Docker attestations (otherwise some OCIR tenancies return `409 Conflict` on manifest push):
 
 ```bash
 cd functions/oci-metrics-splunk-bridge
-IMAGE="${REGION}.ocir.io/${NS}/splunk-oci-lab/metrics-bridge:0.1.0"
+IMAGE="iad.ocir.io/${NS}/splunk-oci-lab/metrics-bridge:0.1.0"
 
-docker build -t "$IMAGE" .
-docker push "$IMAGE"
+docker buildx build --platform linux/amd64 --provenance=false --sbom=false -t "$IMAGE" --push .
 ```
+
+The function image `ENTRYPOINT` must use the **FDK CLI** (not `python func.py` / `fdk.handle`), for example:
+
+`ENTRYPOINT ["/usr/local/bin/fdk", "/function/func.py", "handler"]`
 
 The repository path prefix `splunk-oci-lab/metrics-bridge` must match Terraform `oci_artifacts_container_repository.display_name`.
 

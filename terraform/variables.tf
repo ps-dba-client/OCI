@@ -4,6 +4,18 @@ variable "region" {
   default     = "us-ashburn-1"
 }
 
+variable "availability_domain_index" {
+  type        = number
+  description = "0-based index into regional AD list (try 1 or 2 if capacity errors on AD-1)"
+  default     = 1
+}
+
+variable "create_lab_vm" {
+  type        = bool
+  description = "Optional Ubuntu VM in the public subnet (disable if region/AD has no capacity)"
+  default     = true
+}
+
 variable "tenancy_ocid" {
   type        = string
   description = "Tenancy OCID"
@@ -89,6 +101,12 @@ variable "metrics_compartment_ocid" {
   type        = string
   description = "Compartment to scan for OCI Monitoring metrics (often same as compartment_ocid)"
   default     = ""
+}
+
+variable "metrics_list_in_subtree" {
+  type        = bool
+  description = "Pass compartmentIdInSubtree=true on list_metrics (only valid when metrics compartment is tenancy/root)"
+  default     = false
 }
 
 variable "max_metrics_per_invoke" {

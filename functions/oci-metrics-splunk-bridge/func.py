@@ -3,7 +3,8 @@ OCI Monitoring → Splunk Observability (metrics) + Splunk Cloud (logs via HEC).
 
 Trace / log correlation
 -----------------------
-This function relies on Splunk OpenTelemetry *auto* instrumentation (splunk-instrument) so that
+This function relies on Splunk OpenTelemetry *auto* instrumentation (opentelemetry-instrument +
+Splunk distro) so that
 outbound HTTP (requests) and the logging pipeline participate in the same trace as much as
 possible without manual span creation.
 
@@ -25,7 +26,6 @@ import time
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
-import fdk
 import oci
 import requests
 from fdk import response
@@ -201,16 +201,23 @@ def collect_and_forward(log: logging.Logger) -> int:
         extra_fields={"compartment_id": compartment, "region": region},
     )
 
-    details = ListMetricsDetails(compartment_id_in_subtree=True)
+    details = ListMetricsDetails()
     metrics_seen = 0
     gauges: List[Dict[str, Any]] = []
     opc_next_page: Optional[str] = None
+    in_subtree = os.environ.get("LIST_METRICS_IN_SUBTREE", "false").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+    )
 
     while metrics_seen < max_metrics:
         kwargs: Dict[str, Any] = {
             "compartment_id": compartment,
             "list_metrics_details": details,
         }
+        if in_subtree:
+            kwargs["compartment_id_in_subtree"] = True
         if opc_next_page:
             kwargs["page"] = opc_next_page
 
@@ -297,7 +304,7 @@ def collect_and_forward(log: logging.Logger) -> int:
                 _send_signalfx_gauges(log, realm, token, gauges)
                 gauges.clear()
 
-        opc_next_page = lm.opc_next_page
+        opc_next_page = lm.next_page
         if not opc_next_page:
             break
 
@@ -342,5 +349,3 @@ def handler(ctx, data=None):
         )
 
 
-if __name__ == "__main__":
-    fdk.handle(handler)

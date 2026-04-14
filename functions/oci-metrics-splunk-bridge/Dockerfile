@@ -10,10 +10,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY entrypoint.sh /function/entrypoint.sh
-RUN chmod +x /function/entrypoint.sh
-
 COPY func.py /function/func.py
 
-# Splunk auto-instrumentation wrapper → FDK
-ENTRYPOINT ["/function/entrypoint.sh"]
+# FDK 0.1.109+ expects the fdk CLI as entrypoint (not python -m / fdk.handle).
+ENTRYPOINT ["/usr/local/bin/fdk", "/function/func.py", "handler"]
