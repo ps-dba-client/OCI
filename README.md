@@ -134,6 +134,8 @@ For **CI/CD**, the repo includes [`.github/workflows/terraform-oci.yml`](.github
 - `functions/oci-metrics-splunk-bridge/` — Function source and `Dockerfile`.
 - `docs/` — Deployment guides ([enterprise / client rollout](docs/ENTERPRISE-DEPLOYMENT.md), [function image](docs/DEPLOY-FUNCTION.md), [GitHub / CI](docs/DEPLOY-GITHUB.md)).
 
+**VM-based bridge (same OCI Monitoring → Splunk pattern on an external Linux host with an IAM user API key):** [ps-dba-client/OCI-VM](https://github.com/ps-dba-client/OCI-VM) — [docs](https://github.com/ps-dba-client/OCI-VM/tree/main/docs).
+
 ## Disclaimer
 
 This repository is a **sample implementation**: it uses Function application config for secrets for simplicity, and a **best-effort** subset of OCI Monitoring (list + summarize with a per-invoke cap). **Harden** networking, IAM, secrets handling, and metric cardinality before using as-is in production.

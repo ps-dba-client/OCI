@@ -9,3 +9,5 @@ All guides for [ps-dba-client/OCI](https://github.com/ps-dba-client/OCI) live in
 | [DEPLOY-GITHUB.md](DEPLOY-GITHUB.md) | Clone/push using **`$HOME/.ssh/id_ed25519_github`**, GitHub Actions secrets for Terraform CI |
 
 Start from the repository [README.md](../README.md) for architecture and prerequisites.
+
+**Same integration on an external Linux VM** (API key on the host, not Functions): [ps-dba-client/OCI-VM](https://github.com/ps-dba-client/OCI-VM).
