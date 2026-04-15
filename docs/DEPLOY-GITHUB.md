@@ -8,18 +8,18 @@ Clients can fork or copy it as a starting point for their own Splunk + OCI Monit
 
 ## One-time SSH key for GitHub
 
-Use a **dedicated** key (example path: `$HOME/.ssh/id_ed25519_github`).
+Use a **dedicated** key at **`$HOME/.ssh/id_ed25519_github`** (expand `$HOME` on macOS/Linux; on Windows Git Bash use the same path style).
 
 ```bash
-ssh-keygen -t ed25519 -f ~/.ssh/id_ed25519_github -C "github-ps-dba-client-oci"
+ssh-keygen -t ed25519 -f "$HOME/.ssh/id_ed25519_github" -C "github-ps-dba-client-oci"
 ```
 
-Add the **public** key (`~/.ssh/id_ed25519_github.pub`) to your GitHub account or to the repo’s deploy keys with write access.
+Add the **public** key (`$HOME/.ssh/id_ed25519_github.pub`) to your GitHub account or to the repo’s deploy keys with write access.
 
 Test:
 
 ```bash
-ssh -i ~/.ssh/id_ed25519_github -o IdentitiesOnly=yes -T git@github.com
+ssh -i "$HOME/.ssh/id_ed25519_github" -o IdentitiesOnly=yes -T git@github.com
 ```
 
 ## Initialize and push this folder
@@ -38,7 +38,7 @@ git commit -m "Add OCI Splunk metrics bridge sample (Terraform + Functions)"
 git branch -M main
 git remote add origin git@github.com:ps-dba-client/OCI.git
 
-GIT_SSH_COMMAND='ssh -i ~/.ssh/id_ed25519_github -o IdentitiesOnly=yes' \
+GIT_SSH_COMMAND="ssh -i ${HOME}/.ssh/id_ed25519_github -o IdentitiesOnly=yes" \
   git push -u origin main
 ```
 

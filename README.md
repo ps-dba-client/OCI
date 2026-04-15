@@ -32,6 +32,8 @@ To confirm the function is executing: open the **function** → **Logs** (if log
 - Replace **sample defaults** with client Splunk endpoints, realms, and indexes; treat Function **application config** as sensitive—prefer **OCI Vault** or a secret manager for production.
 - Harden **IAM** (narrow policies), **network** (ingress/egress), and review **metric cardinality** before production cutover.
 
+**Enterprise / strict networking:** the sample is not plug-and-play for every org. See **[docs/ENTERPRISE-DEPLOYMENT.md](docs/ENTERPRISE-DEPLOYMENT.md)** for a phased approach (stakeholder checklist → optional console pilot → Terraform automation → Vault/IAM maturity), egress allowlist hints, and how to split ownership across platform and security teams.
+
 ## Security (read first)
 
 - **Do not commit** `terraform.tfvars`, API keys, HEC tokens, or Splunk access tokens.
@@ -122,7 +124,7 @@ For manual or CI runs, use `oci fn function invoke` (see [docs/DEPLOY-FUNCTION.m
 
 ## GitHub: `ps-dba-client/OCI`
 
-See [docs/DEPLOY-GITHUB.md](docs/DEPLOY-GITHUB.md) for initializing this tree as the remote repository and pushing with **`~/.ssh/id_ed25519_github`**.
+See [docs/DEPLOY-GITHUB.md](docs/DEPLOY-GITHUB.md) for initializing this tree as the remote repository and pushing with **`$HOME/.ssh/id_ed25519_github`**.
 
 For **CI/CD**, the repo includes [`.github/workflows/terraform-oci.yml`](.github/workflows/terraform-oci.yml): Terraform runs with an OCI **IAM API key** (repository Secrets), not a browser **SecurityToken**. Optional stack inputs use Actions **Variables** (`TF_VAR_*`) as documented in the deploy guide.
 
@@ -130,7 +132,7 @@ For **CI/CD**, the repo includes [`.github/workflows/terraform-oci.yml`](.github
 
 - `terraform/` — OCI infrastructure.
 - `functions/oci-metrics-splunk-bridge/` — Function source and `Dockerfile`.
-- `docs/` — Deployment guides.
+- `docs/` — Deployment guides ([enterprise / client rollout](docs/ENTERPRISE-DEPLOYMENT.md), [function image](docs/DEPLOY-FUNCTION.md), [GitHub / CI](docs/DEPLOY-GITHUB.md)).
 
 ## Disclaimer
 

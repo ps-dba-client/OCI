@@ -14,3 +14,4 @@ __pycache__/
 .python-version
 .venv/
 venv/
+.DS_Store
